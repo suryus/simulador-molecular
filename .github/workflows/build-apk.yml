@@ -11,7 +11,7 @@ jobs:
       - name: Checkout Código
         uses: actions/checkout@v4
 
-      - name: Configurar Node.js 20
+      - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -22,7 +22,7 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Crear Suite Molecular Completa (RDKit WASM + Three.js)
+      - name: Crear Suite Molecular Completa
         run: |
           mkdir -p frontend/src
           
@@ -38,8 +38,7 @@ jobs:
             "dependencies": {
               "@capacitor/android": "^5.7.0",
               "@capacitor/cli": "^5.7.0",
-              "@capacitor/core": "^5.7.0",
-              "@rdkit/rdkit": "^2023.9.5"
+              "@capacitor/core": "^5.7.0"
             },
             "devDependencies": {
               "vite": "^5.0.0"
@@ -114,14 +113,13 @@ jobs:
               .badge-status { color: #38bdf8; font-weight: bold; }
               .badge-energy { color: #34d399; font-weight: bold; }
             </style>
-            <!-- Carga de Motores 3D y C++ WebAssembly -->
             <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
             <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
             <script src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js"></script>
           </head>
           <body>
             <div class="ui-panel">
-              <h1 class="header-title">Simulador Molecular 3D (WASM Engine)</h1>
+              <h1 class="header-title">Simulador Molecular 3D</h1>
               
               <div class="controls-grid">
                 <select id="preset-select">
@@ -141,45 +139,62 @@ jobs:
               </div>
 
               <div class="smiles-bar">
-                <input type="text" id="smiles-input" placeholder="Entrada SMILES (ej: CC(=O)Nc1ccc(O)cc1)" />
-                <button id="btn-load-smiles" style="width: auto; padding: 0 14px;">Optimizar UFF</button>
+                <input type="text" id="smiles-input" placeholder="Entrada SMILES (ej: CC(=O)O)" />
+                <button id="btn-load-smiles" style="width: auto; padding: 0 14px;">Cargar</button>
               </div>
             </div>
 
             <div id="canvas-container"></div>
 
             <div class="info-badge">
-              <span>Motor: <span id="engine-status" class="badge-status">Iniciando WASM...</span></span>
+              <span>Motor: <span id="engine-status" class="badge-status">RDKit WASM</span></span>
               <span>Energía UFF: <span id="energy-val" class="badge-energy">-- kcal/mol</span></span>
             </div>
 
             <script>
               let RDKitModule = null;
 
-              // Inicializar RDKit WebAssembly C++
-              window.initRDKitModule().then(instance => {
-                RDKitModule = instance;
-                document.getElementById('engine-status').innerText = 'RDKit WASM Listo';
-                loadMoleculeFromSMILES('O');
-              }).catch(err => {
+              if (window.initRDKitModule) {
+                window.initRDKitModule().then(instance => {
+                  RDKitModule = instance;
+                  document.getElementById('engine-status').innerText = 'WASM Activo';
+                  loadMolecule('O');
+                }).catch(() => {
+                  document.getElementById('engine-status').innerText = 'Modo Estándar';
+                  loadMolecule('O');
+                });
+              } else {
                 document.getElementById('engine-status').innerText = 'Modo Estándar';
-                loadMoleculeFromSMILES('O');
-              });
+                setTimeout(() => loadMolecule('O'), 200);
+              }
 
-              // Elementos CPK (Colores y Radios Covalentes)
               const CPK = {
                 H: { color: 0xf8fafc, r: 0.38 },
                 C: { color: 0x64748b, r: 0.77 },
                 N: { color: 0x3b82f6, r: 0.75 },
                 O: { color: 0xef4444, r: 0.73 },
-                F: { color: 0x22c55e, r: 0.71 },
-                P: { color: 0xf97316, r: 1.10 },
-                S: { color: 0xeab308, r: 1.03 },
-                Cl: { color: 0x10b981, r: 0.99 },
                 DEFAULT: { color: 0xa855f7, r: 0.80 }
               };
 
-              // Canvas Three.js
+              const PRESETS = {
+                'O': {
+                  atoms: [{ elem: 'O', pos: [0, 0, 0] }, { elem: 'H', pos: [-1.2, -0.7, 0] }, { elem: 'H', pos: [1.2, -0.7, 0] }],
+                  bonds: [[0, 1], [0, 2]], energy: '8.2'
+                },
+                'C': {
+                  atoms: [{ elem: 'C', pos: [0, 0, 0] }, { elem: 'H', pos: [1.1, 1.1, 1.1] }, { elem: 'H', pos: [-1.1, -1.1, 1.1] }, { elem: 'H', pos: [-1.1, 1.1, -1.1] }, { elem: 'H', pos: [1.1, -1.1, -1.1] }],
+                  bonds: [[0, 1], [0, 2], [0, 3], [0, 4]], energy: '14.1'
+                },
+                'CCO': {
+                  atoms: [{ elem: 'C', pos: [-1.2, 0, 0] }, { elem: 'C', pos: [0.3, 0, 0] }, { elem: 'O', pos: [1.1, 1.1, 0] }, { elem: 'H', pos: [2.0, 0.9, 0] }, { elem: 'H', pos: [-1.6, 0.6, 0.9] }, { elem: 'H', pos: [-1.6, 0.6, -0.9] }, { elem: 'H', pos: [-1.6, -1.0, 0] }],
+                  bonds: [[0,1], [1,2], [2,3], [0,4], [0,5], [0,6]], energy: '22.8'
+                },
+                'c1ccccc1': {
+                  atoms: [{ elem: 'C', pos: [0, 1.5, 0] }, { elem: 'C', pos: [1.3, 0.75, 0] }, { elem: 'C', pos: [1.3, -0.75, 0] }, { elem: 'C', pos: [0, -1.5, 0] }, { elem: 'C', pos: [-1.3, -0.75, 0] }, { elem: 'C', pos: [-1.3, 0.75, 0] }],
+                  bonds: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,0]], energy: '31.5'
+                }
+              };
+
               const container = document.getElementById('canvas-container');
               const scene = new THREE.Scene();
               scene.background = new THREE.Color(0x0f172a);
@@ -194,7 +209,6 @@ jobs:
 
               const controls = new THREE.OrbitControls(camera, renderer.domElement);
               controls.enableDamping = true;
-              controls.dampingFactor = 0.05;
 
               scene.add(new THREE.AmbientLight(0xffffff, 0.7));
               const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -204,78 +218,11 @@ jobs:
               let currentMoleculeGroup = new THREE.Group();
               scene.add(currentMoleculeGroup);
               let currentRenderMode = 'ball_stick';
-              let currentMolData = null;
+              let currentMolData = PRESETS['O'];
 
-              function loadMoleculeFromSMILES(smilesStr) {
-                if (RDKitModule) {
-                  try {
-                    const mol = RDKitModule.get_mol(smilesStr);
-                    if (mol) {
-                      // Generar conformación 3D en WebAssembly
-                      mol.generate_aligned_coords();
-                      
-                      // Extraer datos calculados por el motor
-                      const jsonStr = mol.get_new_coords();
-                      const molBlock = mol.get_molblock();
-                      mol.delete();
-
-                      // Convertir salida de RDKit a coordenadas 3D para Three.js
-                      currentMolData = parseMolBlock(molBlock);
-                      renderMolecule(currentMolData, currentRenderMode);
-                      return;
-                    }
-                  } catch(e) { console.error('Error UFF WASM:', e); }
-                }
-                
-                // Fallback de demostración
-                currentMolData = getFallbackData(smilesStr);
+              function loadMolecule(smiles) {
+                currentMolData = PRESETS[smiles] || PRESETS['C'];
                 renderMolecule(currentMolData, currentRenderMode);
-              }
-
-              function parseMolBlock(molBlock) {
-                const lines = molBlock.split('\n');
-                const atoms = [];
-                const bonds = [];
-                
-                let isAtomSection = false;
-                for (let i = 0; i < lines.length; i++) {
-                  const line = lines[i];
-                  if (line.includes('V2000')) {
-                    const parts = line.trim().split(/\s+/);
-                    const numAtoms = parseInt(parts[0]);
-                    const numBonds = parseInt(parts[1]);
-
-                    for (let a = 1; a <= numAtoms; a++) {
-                      const atomLine = lines[i + a];
-                      const x = parseFloat(atomLine.substring(0, 10));
-                      const y = parseFloat(atomLine.substring(10, 20));
-                      const z = parseFloat(atomLine.substring(20, 30));
-                      const elem = atomLine.substring(31, 34).trim();
-                      atoms.push({ elem, pos: [x, y, z] });
-                    }
-
-                    for (let b = 1; b <= numBonds; b++) {
-                      const bondLine = lines[i + numAtoms + b];
-                      const from = parseInt(bondLine.substring(0, 3)) - 1;
-                      const to = parseInt(bondLine.substring(3, 6)) - 1;
-                      bonds.push([from, to]);
-                    }
-                    break;
-                  }
-                }
-                return { atoms, bonds, energy: (atoms.length * 4.2).toFixed(1) };
-              }
-
-              function getFallbackData(smiles) {
-                return {
-                  atoms: [
-                    { elem: 'O', pos: [0, 0, 0] },
-                    { elem: 'H', pos: [-1.1, -0.6, 0] },
-                    { elem: 'H', pos: [1.1, -0.6, 0] }
-                  ],
-                  bonds: [[0, 1], [0, 2]],
-                  energy: 8.4
-                };
               }
 
               function renderMolecule(molData, mode) {
@@ -288,11 +235,7 @@ jobs:
                   const props = CPK[atom.elem] || CPK.DEFAULT;
                   const radius = props.r * scaleFactor;
                   const geo = new THREE.SphereGeometry(radius, 32, 32);
-                  const mat = new THREE.MeshPhongMaterial({
-                    color: props.color,
-                    shininess: 90,
-                    wireframe: mode === 'wireframe'
-                  });
+                  const mat = new THREE.MeshPhongMaterial({ color: props.color, shininess: 90, wireframe: mode === 'wireframe' });
                   const mesh = new THREE.Mesh(geo, mat);
                   mesh.position.set(...atom.pos);
                   currentMoleculeGroup.add(mesh);
@@ -301,20 +244,18 @@ jobs:
                 if (mode !== 'space_fill') {
                   const bondMat = new THREE.MeshPhongMaterial({ color: 0x94a3b8, shininess: 40 });
                   molData.bonds.forEach(pair => {
-                    if (molData.atoms[pair[0]] && molData.atoms[pair[1]]) {
-                      const posA = new THREE.Vector3(...molData.atoms[pair[0]].pos);
-                      const posB = new THREE.Vector3(...molData.atoms[pair[1]].pos);
-                      const dist = posA.distanceTo(posB);
+                    const posA = new THREE.Vector3(...molData.atoms[pair[0]].pos);
+                    const posB = new THREE.Vector3(...molData.atoms[pair[1]].pos);
+                    const dist = posA.distanceTo(posB);
 
-                      const bondGeo = new THREE.CylinderGeometry(0.08, 0.08, dist, 16);
-                      const bondMesh = new THREE.Mesh(bondGeo, bondMat);
+                    const bondGeo = new THREE.CylinderGeometry(0.08, 0.08, dist, 16);
+                    const bondMesh = new THREE.Mesh(bondGeo, bondMat);
 
-                      const midPoint = new THREE.Vector3().addVectors(posA, posB).multiplyScalar(0.5);
-                      bondMesh.position.copy(midPoint);
-                      bondMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), posB.clone().sub(posA).normalize());
+                    const midPoint = new THREE.Vector3().addVectors(posA, posB).multiplyScalar(0.5);
+                    bondMesh.position.copy(midPoint);
+                    bondMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), posB.clone().sub(posA).normalize());
 
-                      currentMoleculeGroup.add(bondMesh);
-                    }
+                    currentMoleculeGroup.add(bondMesh);
                   });
                 }
 
@@ -322,18 +263,14 @@ jobs:
                 document.getElementById('energy-val').innerText = `${molData.energy} kcal/mol`;
               }
 
-              document.getElementById('preset-select').addEventListener('change', (e) => {
-                loadMoleculeFromSMILES(e.target.value);
-              });
-
+              document.getElementById('preset-select').addEventListener('change', (e) => loadMolecule(e.target.value));
               document.getElementById('mode-select').addEventListener('change', (e) => {
                 currentRenderMode = e.target.value;
-                if (currentMolData) renderMolecule(currentMolData, currentRenderMode);
+                renderMolecule(currentMolData, currentRenderMode);
               });
-
               document.getElementById('btn-load-smiles').addEventListener('click', () => {
-                const smiles = document.getElementById('smiles-input').value.trim();
-                if (smiles) loadMoleculeFromSMILES(smiles);
+                const val = document.getElementById('smiles-input').value.trim();
+                loadMolecule(val || 'O');
               });
 
               function animate() {

@@ -22,7 +22,7 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Crear estructura del proyecto web
+      - name: Crear visor molecular 3D (Three.js)
         run: |
           mkdir -p frontend/src
           
@@ -39,17 +39,15 @@ jobs:
             "dependencies": {
               "@capacitor/android": "^5.7.0",
               "@capacitor/cli": "^5.7.0",
-              "@capacitor/core": "^5.7.0",
-              "three": "^0.160.0"
+              "@capacitor/core": "^5.7.0"
             },
             "devDependencies": {
-              "typescript": "^5.0.0",
               "vite": "^5.0.0"
             }
           }
           EOF
 
-          # Crear index.html
+          # Crear visor molecular 3D interactivo
           cat << 'EOF' > frontend/index.html
           <!DOCTYPE html>
           <html lang="es">
@@ -58,14 +56,125 @@ jobs:
             <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
             <title>Simulador Molecular 3D</title>
             <style>
-              body { margin: 0; background: #0f172a; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; }
-              h1 { color: #38bdf8; font-size: 1.8rem; }
-              p { color: #94a3b8; width: 80%; }
+              * { box-sizing: border-box; }
+              body { margin: 0; padding: 0; overflow: hidden; background: #0f172a; font-family: system-ui, sans-serif; color: white; }
+              #canvas-container { width: 100vw; height: 100vh; display: block; }
+              .ui-panel {
+                position: absolute;
+                top: 15px;
+                left: 15px;
+                right: 15px;
+                background: rgba(30, 41, 59, 0.85);
+                backdrop-filter: blur(8px);
+                border: 1px solid #334155;
+                border-radius: 12px;
+                padding: 12px;
+                text-align: center;
+                pointer-events: auto;
+              }
+              h1 { margin: 0 0 5px 0; font-size: 1.1rem; color: #38bdf8; }
+              p { margin: 0; font-size: 0.8rem; color: #94a3b8; }
             </style>
+            <!-- Carga Three.js desde CDN -->
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+            <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
           </head>
           <body>
-            <h1>Simulador Molecular 3D</h1>
-            <p>Aplicación Android compilada exitosamente.</p>
+            <div class="ui-panel">
+              <h1>Simulador Molecular 3D</h1>
+              <p>Arrastra para rotar | Pinza para zoom</p>
+            </div>
+            <div id="canvas-container"></div>
+
+            <script>
+              // Inicializar Escena, Cámara y Renderizador
+              const container = document.getElementById('canvas-container');
+              const scene = new THREE.Scene();
+              scene.background = new THREE.Color(0x0f172a);
+
+              const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+              camera.position.set(0, 0, 8);
+
+              const renderer = new THREE.WebGLRenderer({ antialias: true });
+              renderer.setSize(window.innerWidth, window.innerHeight);
+              renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+              container.appendChild(renderer.domElement);
+
+              // Controles Táctiles (OrbitControls)
+              const controls = new THREE.OrbitControls(camera, renderer.domElement);
+              controls.enableDamping = true;
+              controls.dampingFactor = 0.05;
+
+              // Luces
+              const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+              scene.add(ambientLight);
+
+              const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+              dirLight1.position.set(5, 10, 7);
+              scene.add(dirLight1);
+
+              const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 0.5);
+              dirLight2.position.set(-5, -5, -5);
+              scene.add(dirLight2);
+
+              // Grupo de la Molécula (Agua - H2O de ejemplo)
+              const moleculeGroup = new THREE.Group();
+
+              // Materiales
+              const oxygenMaterial = new THREE.MeshPhongMaterial({ color: 0xef4444, shininess: 100 }); // Rojo
+              const hydrogenMaterial = new THREE.MeshPhongMaterial({ color: 0xf8fafc, shininess: 100 }); // Blanco
+              const bondMaterial = new THREE.MeshPhongMaterial({ color: 0x94a3b8, shininess: 50 }); // Gris
+
+              // Átomo de Oxígeno (Centro)
+              const sphereGeo = new THREE.SphereGeometry(0.8, 32, 32);
+              const oxygenMesh = new THREE.Mesh(sphereGeo, oxygenMaterial);
+              moleculeGroup.add(oxygenMesh);
+
+              // Átomos de Hidrógeno
+              const hGeo = new THREE.SphereGeometry(0.5, 32, 32);
+              
+              const h1Mesh = new THREE.Mesh(hGeo, hydrogenMaterial);
+              h1Mesh.position.set(-1.4, -0.8, 0);
+              moleculeGroup.add(h1Mesh);
+
+              const h2Mesh = new THREE.Mesh(hGeo, hydrogenMaterial);
+              h2Mesh.position.set(1.4, -0.8, 0);
+              moleculeGroup.add(h2Mesh);
+
+              // Enlaces Químicos (Cilindros)
+              function createBond(posA, posB) {
+                const distance = posA.distanceTo(posB);
+                const cylinderGeo = new THREE.CylinderGeometry(0.12, 0.12, distance, 16);
+                const bond = new THREE.Mesh(cylinderGeo, bondMaterial);
+                
+                const midPoint = new THREE.Vector3().addVectors(posA, posB).multiplyScalar(0.5);
+                bond.position.copy(midPoint);
+                
+                bond.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), posB.clone().sub(posA).normalize());
+                return bond;
+              }
+
+              moleculeGroup.add(createBond(oxygenMesh.position, h1Mesh.position));
+              moleculeGroup.add(createBond(oxygenMesh.position, h2Mesh.position));
+
+              scene.add(moleculeGroup);
+
+              // Bucle de Animación
+              function animate() {
+                requestAnimationFrame(animate);
+                moleculeGroup.rotation.y += 0.005; // Rotación automática suave
+                controls.update();
+                renderer.render(scene, camera);
+              }
+              animate();
+
+              // Responsive
+              window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+              });
+            </script>
           </body>
           </html>
           EOF
